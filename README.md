@@ -51,8 +51,7 @@ python demo_llm_percakapan.py --mode interaktif
 - `logs/*.out`: log tiap job, ditambah `gpu-usage-*.csv` / `npu-usage-*.log` (utilisasi tiap 5 detik)
 - `hasil_terjemahan.tsv`: terjemahan per bahasa
 - `hasil_percakapan.md`: jawaban LLM per bidang
-- `hasil_gelombang.png`: medan gelombang dan amplitudo di garis pantai
-- `model_resnet50_demo.pt`: checkpoint pelatihan
+
 
 ## Yang perlu disesuaikan dengan cluster AKF
 - `--partition`, `--gres` (mis. `gpu:1`, `npu:1`) 

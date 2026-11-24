@@ -31,14 +31,14 @@ SCRIPT=$1; shift
 echo "Job ${SLURM_JOB_ID} | $(hostname) | $(date)"
 echo "NPU dialokasikan: ${SLURM_JOB_GPUS:-${SLURM_STEP_GPUS:-lihat furiosa-smi}} | script: ${SCRIPT} $*"
 
-# 1) Environment Python furiosa-llm (disediakan admin cluster)
+# 1) Environment Python furiosa-llm (disediakan admin cluster); path pribadi opsional di .env
+source "${SLURM_SUBMIT_DIR:-.}/muat_env.sh"
 FURIOSA_VENV=${FURIOSA_VENV:-/apps/AI/venv_furiosa/furiosa_llm}
 set +u
 source "${FURIOSA_VENV}/bin/activate"   # berisi: furiosa-llm, furiosa-torch, torch, transformers
 set -u
 
 # 2) Lokasi model
-export MODEL_DIR=${MODEL_DIR:-/path/ke/scratch/anda/models}
 export NPU_MODEL_DIR=${NPU_MODEL_DIR:-/apps/AI/LLM/models/NPU/furiosa-ai}
 export HF_HUB_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false

@@ -15,8 +15,23 @@ import subprocess
 
 import torch
 
-# Folder model lokal (sudah diunduh, compute node tanpa internet). Bisa diganti lewat env MODEL_DIR.
-MODEL_DIR = os.environ.get("MODEL_DIR", "/path/ke/scratch/anda/models")
+def _muat_env(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")):
+    """Isi variabel dari .env (path pribadi, tidak di-commit) bila belum ada di environment."""
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for baris in f:
+            baris = baris.strip()
+            if baris and not baris.startswith("#") and "=" in baris:
+                k, v = baris.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
+
+
+_muat_env()
+
+# Folder model lokal (sudah diunduh, compute node tanpa internet), dari env/.env MODEL_DIR.
+# Bila tidak diisi, model dicari lewat ID Hugging Face (cache HF / internet).
+MODEL_DIR = os.environ.get("MODEL_DIR", "")
 NPU_MODEL_DIR = os.environ.get("NPU_MODEL_DIR", "/apps/AI/LLM/models/NPU/furiosa-ai")
 
 

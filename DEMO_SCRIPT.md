@@ -4,7 +4,7 @@ Perintah langkah demi langkah untuk demo yang direkam. Jalankan semuanya dari **
 
 | Node | Partisi | Akselerator | Perangkat lunak |
 |---|---|---|---|
-| GPU | `gpu_general` | NVIDIA H200 (4 per node) | conda `vllm_env` (PyTorch, vLLM) |
+| GPU | `gpu_general` | NVIDIA H200 (4 per node) | venv native (`requirements.txt`) atau conda `vllm_env` |
 | NPU | `npu_general` | FuriosaAI RNGD (4 per node) | `/apps/AI/venv_furiosa/furiosa_llm` |
 
 Perkiraan waktu: memuat model butuh ~75 detik di GPU (vLLM) dan ~40 detik di NPU, lalu setiap uji throughput berjalan selama 60 detik.
@@ -14,7 +14,8 @@ Perkiraan waktu: memuat model butuh ~75 detik di GPU (vLLM) dan ~40 detik di NPU
 ## 0. Persiapan (sebelum merekam)
 
 ```bash
-cd /path/ke/akf-demo
+cd /path/ke/akf-demo                                   # folder hasil clone repo ini
+cp -n .env.example .env                                # sekali saja, lalu isi path Anda di .env
 mkdir -p logs                                          # wajib: tanpa folder ini, job Slurm gagal tanpa pesan
 rm -f logs/* hasil_*.tsv hasil_*.md                    # hapus hasil sebelumnya
 clear
@@ -82,9 +83,10 @@ grep -h Throughput logs/*-demo-*.out                  # perbandingan kecepatan G
 
 ```bash
 srun -p gpu_general --gres=gpu:1 -c 16 --mem=64G --time=00:30:00 --pty bash
-source /path/ke/miniforge3/etc/profile.d/conda.sh
-conda activate vllm_env
 cd /path/ke/akf-demo
+source muat_env.sh                                     # baca path dari .env
+source "$VENV/bin/activate"                            # venv native, ATAU:
+# source "$CONDA_ROOT/etc/profile.d/conda.sh" && conda activate "$CONDA_ENV"
 export HF_HUB_OFFLINE=1
 python demo_llm_percakapan.py --mode interaktif
 ```

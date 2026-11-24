@@ -8,8 +8,13 @@
 #===============================================================
 set -euo pipefail
 
-export MODEL_DIR=${MODEL_DIR:-/path/ke/scratch/anda/models}  # samakan dengan sbatch
-HF=${HF:-/path/ke/miniforge3/envs/vllm_env/bin/hf}
+source "$(dirname "$0")/muat_env.sh"               # MODEL_DIR dkk. dari .env (lihat .env.example)
+: "${MODEL_DIR:?MODEL_DIR belum diisi di .env (lihat .env.example)}"
+# CLI 'hf' (paket huggingface_hub): dari PATH (venv/conda aktif), jika tidak ada dari env di .env
+HF=${HF:-$(command -v hf || true)}
+if [ -z "$HF" ] && [ -n "${VENV:-}" ];       then HF="$VENV/bin/hf"; fi
+if [ -z "$HF" ] && [ -n "${CONDA_ROOT:-}" ]; then HF="$CONDA_ROOT/envs/${CONDA_ENV:-vllm_env}/bin/hf"; fi
+[ -x "${HF:-}" ] || { echo "ERROR: perintah 'hf' tidak ditemukan; aktifkan venv/conda dulu" >&2; exit 1; }
 mkdir -p "$MODEL_DIR" logs
 
 # Model gated perlu login dulu: hf auth login   (token dari huggingface.co/settings/tokens)

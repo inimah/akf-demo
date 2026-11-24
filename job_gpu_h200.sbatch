@@ -28,15 +28,38 @@ shift || true                      # sisa argumen diteruskan ke script Python
 echo "Job ${SLURM_JOB_ID} | $(hostname) | $(date)"
 echo "GPU dialokasikan: ${CUDA_VISIBLE_DEVICES:-tidak ada} | script: ${SCRIPT} $*"
 
-# 1) Environment conda (torch 2.14+cu130 sudah membawa CUDA sendiri; modul cuda tidak diperlukan)
-CONDA_ROOT=${CONDA_ROOT:-/path/ke/miniforge3}
-set +u                             # skrip activate conda memakai variabel yang belum didefinisikan
-source "${CONDA_ROOT}/etc/profile.d/conda.sh"
-conda activate vllm_env            # berisi: torch, transformers, sentencepiece, vllm, matplotlib
+# 1) Environment Python (torch 2.14+cu130 sudah membawa CUDA sendiri; modul cuda tidak diperlukan)
+#    Path pribadi disimpan di .env (tidak di-commit), lihat .env.example. Urutan pemilihan:
+#    a) VENV  : venv Python native (TANPA miniforge/conda), dibuat dengan:
+#                 python3 -m venv /path/venv-akf-demo
+#                 /path/venv-akf-demo/bin/pip install -r requirements.txt
+#               Dipakai bila VENV diisi di .env, atau venv sedang aktif saat sbatch dijalankan.
+#    b) CONDA_ROOT + CONDA_ENV : bila memakai miniforge/conda
+#    c) selain itu : python3 bawaan sistem (paket dari requirements.txt harus sudah terpasang)
+source "${SLURM_SUBMIT_DIR:-.}/muat_env.sh"
+VENV=${VENV:-${VIRTUAL_ENV:-}}
+set +u                             # skrip activate memakai variabel yang belum didefinisikan
+if [ -n "${VENV}" ]; then
+    source "${VENV}/bin/activate"
+    PY=python
+elif [ -n "${CONDA_ROOT}" ]; then
+    source "${CONDA_ROOT}/etc/profile.d/conda.sh"
+    conda activate "${CONDA_ENV:-vllm_env}"
+    PY=python
+else
+    PY=python3                     # Python native sistem
+fi
 set -u
+echo "Python: $(command -v ${PY}) ($(${PY} --version 2>&1))"
+if ! ${PY} -c "import torch, transformers, vllm" 2>/dev/null; then
+    echo "ERROR: paket belum lengkap di Python ini. Buat venv native lalu isi VENV di .env:" >&2
+    echo "  python3 -m venv /path/venv-akf-demo && /path/venv-akf-demo/bin/pip install -r requirements.txt" >&2
+    exit 1
+fi
 
 # 2) Model dibaca dari folder lokal yang sudah diunduh di login node (unduh_model.sh)
-export MODEL_DIR=${MODEL_DIR:-/path/ke/scratch/anda/models}
+: "${MODEL_DIR:?MODEL_DIR belum diisi di .env (lihat .env.example)}"
+export MODEL_DIR
 export HF_HUB_OFFLINE=1            # compute node tanpa internet
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
@@ -49,6 +72,6 @@ MONITOR_PID=$!
 trap 'kill ${MONITOR_PID} 2>/dev/null || true' EXIT
 
 # 4) Jalankan eksperimen
-srun python "${SCRIPT}" "$@"
+srun ${PY} "${SCRIPT}" "$@"
 
 echo "Job selesai pada $(date)"

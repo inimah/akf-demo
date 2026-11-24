@@ -5,7 +5,6 @@
 #
 # Pemakaian:
 #   sbatch job_npu.sbatch                                       # default: demo_matmul.py --dtype fp16
-#   sbatch job_npu.sbatch demo_dinamika_molekul.py
 #   sbatch job_npu.sbatch demo_llm_terjemahan.py
 #   sbatch job_npu.sbatch demo_llm_percakapan.py                # engine hf (transformers + torch_npu)
 #

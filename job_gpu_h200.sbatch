@@ -4,7 +4,6 @@
 #
 # Pemakaian:
 #   sbatch job_gpu_h200.sbatch                                  # default: demo_matmul.py
-#   sbatch job_gpu_h200.sbatch demo_gelombang_2d.py --duration 60
 #   sbatch job_gpu_h200.sbatch demo_llm_terjemahan.py
 #   sbatch job_gpu_h200.sbatch demo_llm_percakapan.py --engine vllm
 #

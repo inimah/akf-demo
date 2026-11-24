@@ -8,9 +8,9 @@ Setiap demo berjalan sekitar 1 menit, dan **script Python yang sama** dapat dija
 
 | Demo | Isi | Relevan untuk |
 |---|---|---|
-| `demo_llm_terjemahan.py` | **LLM penerjemahan** Indonesia → Inggris, Jawa, Sunda, Minang, Bali, Bugis, dll. | OR Arkeologi, Bahasa, dan Sastra, OR IPSH, layanan publik multibahasa |
-| `demo_llm_percakapan.py` | **LLM percakapan**: batch tanya-jawab lintas bidang, multi-giliran, interaktif | Semua OR (asisten riset), OR Tata Kelola, Ekonomi, dan Kesejahteraan |
-| `demo_analisis_teks.py` | Embedding teks multibahasa + clustering tema (mis. aduan warga) | OR IPSH, OR Tata Kelola, Ekonomi, dan Kesejahteraan, FEB/FISIP/FKM |
+| `demo_llm_terjemahan.py` | **LLM penerjemahan** Indonesia → Inggris, Jawa, Sunda, Minang, Bali, Bugis, dll. | OR Arkeologi, Bahasa, dan Sastra, OR IPSH, layanan publik multibahasa, Riset Natural Language Processing/AI/Mesin Penerjemah  |
+| `demo_llm_percakapan.py` | **LLM percakapan**: batch tanya-jawab lintas bidang, multi-giliran, interaktif | Riset pengembangan AI untuk Asisten riset/Chatbot |
+| `demo_analisis_teks.py` | Embedding teks multibahasa + clustering tema (mis. aduan warga) | Riset Natural Language Processing/AI/Data Science |
 
 ## Langkah tutorial
 

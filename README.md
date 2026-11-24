@@ -53,9 +53,4 @@ python demo_llm_percakapan.py --mode interaktif
 - `hasil_percakapan.md`: jawaban LLM per bidang
 
 
-## Yang perlu disesuaikan dengan cluster AKF
-- `--partition`, `--gres` (mis. `gpu:1`, `npu:1`) 
-- Baris `module load`, `conda activate`, path `set_env.sh` CANN, serta `HF_HOME` (lokasi scratch/penyimpanan bersama)
-- Model LLM dapat diganti via `--model`, misalnya LLM fokus Asia Tenggara/Indonesia
-  (SEA-LION, Sahabat-AI; lihat `unduh_model.sh`). Pastikan lisensinya sesuai untuk penggunaan Anda.
 

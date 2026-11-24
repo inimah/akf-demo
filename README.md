@@ -2,7 +2,16 @@
 
 Contoh untuk Sosialisasi ASEAN-Korea HPC Facility in Indonesia (AKF), BRIN, 24 November 2026.
 Setiap demo berjalan sekitar 1 menit, dan **script Python yang sama** dapat dijalankan di GPU node
-(NVIDIA H200) maupun NPU node. 
+(NVIDIA H200, partisi `gpu_general`) maupun NPU node (FuriosaAI RNGD, partisi `npu_general`).
+Deteksi akselerator dan lokasi model ada di `akselerator.py`.
+
+| | GPU H200 (`job_gpu_h200.sbatch`) | NPU RNGD (`job_npu.sbatch`) |
+|---|---|---|
+| Environment | conda `vllm_env` | `/apps/AI/venv_furiosa/furiosa_llm` |
+| Terjemahan | NLLB-200 (atau `--mode llm`: vLLM + SEA-LION v5 9B) | furiosa-llm + Llama-3.1-8B-Instruct |
+| Percakapan | vLLM + SEA-LION v5 9B | furiosa-llm + Llama-3.1-8B-Instruct |
+| Analisis teks | multilingual-e5-small | tidak tersedia (perlu artefak terkompilasi) |
+
 
 ## Peta demo dan bidang riset
 
@@ -15,26 +24,26 @@ Setiap demo berjalan sekitar 1 menit, dan **script Python yang sama** dapat dija
 ## Langkah tutorial
 
 ```bash
-# 0. Di login node: salin folder ini lalu masuk
-cd hpc-demo
+# 0. Di login node: masuk ke folder demo
+cd akf-demo
 mkdir -p logs                     # WAJIB: tanpa folder ini, job gagal tanpa pesan
 
-# 1. Siapkan environment (sekali saja; nama env mengikuti file sbatch)
-conda create -n demo-gpu python=3.11 -y && conda activate demo-gpu
-pip install torch torchvision transformers sentencepiece matplotlib    # + vllm (opsional)
-#    Untuk NPU: env demo-npu dengan torch + torch_npu yang versinya sesuai CANN di cluster
+# 1. Environment sudah tersedia:
+#    GPU: conda env vllm_env (torch, transformers, vllm)
+#    NPU: /apps/AI/venv_furiosa/furiosa_llm (furiosa-llm, disediakan admin)
 
-# 2. Unduh model LLM ke cache bersama (compute node biasanya tanpa internet)
+# 2. Unduh model ke folder lokal (sekali saja; compute node tanpa internet)
 bash unduh_model.sh
 
 # 3. Cek partisi & sumber daya
 sinfo -o "%P %G %D %t"
 
 # 4. Submit: format umum ->  sbatch <file job> <script demo> [argumen]
-sbatch job_gpu_h200.sbatch                                   # uji matmul
 sbatch job_gpu_h200.sbatch demo_llm_terjemahan.py
 sbatch job_npu.sbatch      demo_llm_terjemahan.py            # script sama, di NPU
-sbatch job_gpu_h200.sbatch demo_llm_percakapan.py --engine vllm
+sbatch job_gpu_h200.sbatch demo_llm_percakapan.py
+sbatch job_npu.sbatch      demo_llm_percakapan.py
+sbatch job_gpu_h200.sbatch demo_analisis_teks.py
 
 # 5. Pantau & lihat hasil
 squeue -u $USER
@@ -43,12 +52,15 @@ sacct -j <JOBID> --format=JobID,JobName,Partition,State,Elapsed,AllocTRES%40
 scancel <JOBID>                                              # batalkan bila perlu
 
 # 6. Percakapan interaktif dengan LLM (sesi interaktif, bukan sbatch)
-srun -p gpu --gres=gpu:h200:1 --time=00:30:00 --pty bash
-python demo_llm_percakapan.py --mode interaktif
+srun -p gpu_general --gres=gpu:1 --time=00:30:00 --pty bash
+conda activate vllm_env && python demo_llm_percakapan.py --mode interaktif
+#    atau di NPU:
+srun -p npu_general --gres=npu:1 --time=00:30:00 --pty bash
+source /apps/AI/venv_furiosa/furiosa_llm/bin/activate && python demo_llm_percakapan.py --mode interaktif
 ```
 
 ## Berkas hasil
-- `logs/*.out`: log tiap job, ditambah `gpu-usage-*.csv` / `npu-usage-*.log` (utilisasi tiap 5 detik)
+- `logs/*.out`: log tiap job, ditambah `gpu-usage-*.csv` / `npu-usage-*.log` (utilisasi GPU / suhu-daya NPU tiap 5 detik)
 - `hasil_terjemahan.tsv`: terjemahan per bahasa
 - `hasil_percakapan.md`: jawaban LLM per bidang
 

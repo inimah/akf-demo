@@ -5,23 +5,26 @@ Relevan untuk: OR Arkeologi, Bahasa, dan Sastra (korpus bahasa daerah, naskah),
 OR Ilmu Pengetahuan Sosial dan Humaniora, layanan publik multibahasa, fakultas
 ilmu budaya/ilmu komputer.
 
-Model default: NLLB-200 (Meta, model terjemahan khusus, 200 bahasa) yang mencakup
-Indonesia, Inggris, Jawa, Sunda, Minangkabau, Bali, Aceh, Banjar, Bugis.
-Mode --mode llm memakai LLM percakapan (instruct) dengan prompt terjemahan.
+Mode --mode nllb (default di GPU): NLLB-200 (Meta, model terjemahan khusus, 200 bahasa)
+yang mencakup Indonesia, Inggris, Jawa, Sunda, Minangkabau, Bali, Aceh, Banjar, Bugis.
+Mode --mode llm: LLM percakapan (instruct) dengan prompt terjemahan
+  - GPU H200      : vLLM + SEA-LION v5 9B (aisingapore)
+  - NPU RNGD      : furiosa-llm + artefak Llama-3.1-8B-Instruct (otomatis dipakai di NPU,
+                    karena NLLB tidak tersedia sebagai artefak RNGD)
 
-Model harus diunduh dulu di login node (lihat unduh_model.sh), karena compute node
-umumnya tanpa akses internet.
+Model dibaca dari folder lokal (MODEL_DIR, lihat akselerator.py / unduh_model.sh).
 
     python demo_llm_terjemahan.py --duration 60
     python demo_llm_terjemahan.py --target jav_Latn sun_Latn --input teks.txt
-    python demo_llm_terjemahan.py --mode llm --model Qwen/Qwen2.5-7B-Instruct
+    python demo_llm_terjemahan.py --mode llm
 """
 import argparse
 import time
 
 import torch
 
-from akselerator import cetak_info, memori_puncak_gb, pilih_device, sinkron
+from akselerator import (MODEL_CHAT_GPU, MODEL_CHAT_NPU, MODEL_NLLB, cetak_info, memori_puncak,
+                         pilih_device, sinkron)
 
 BAHASA = {
     "ind_Latn": "Indonesia", "eng_Latn": "Inggris", "jav_Latn": "Jawa", "sun_Latn": "Sunda",
@@ -46,10 +49,10 @@ def baca_input(path):
         return [b.strip() for b in f if b.strip()]
 
 
-def muat_nllb(model_id, device, dtype):
+def muat_nllb(model_id, device, dtype, jenis):
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
     tok = AutoTokenizer.from_pretrained(model_id, src_lang="ind_Latn")
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_id, torch_dtype=dtype).to(device).eval()
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_id, dtype=dtype).to(device).eval()
 
     @torch.inference_mode()
     def terjemah(kalimat, tgt):
@@ -60,30 +63,30 @@ def muat_nllb(model_id, device, dtype):
     return terjemah
 
 
-def muat_llm(model_id, device, dtype):
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    tok = AutoTokenizer.from_pretrained(model_id, padding_side="left")
-    if tok.pad_token is None:
-        tok.pad_token = tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=dtype).to(device).eval()
+def muat_llm(model_id, device, dtype, jenis):
+    if jenis == "NPU":                                   # FuriosaAI RNGD
+        from furiosa_llm import SamplingParams
+        from akselerator import muat_llm_furiosa
+        llm, kw = muat_llm_furiosa(model_id), {}
+    else:                                                # NVIDIA GPU
+        from vllm import LLM, SamplingParams
+        llm = LLM(model=model_id, dtype="bfloat16", gpu_memory_utilization=0.85, max_model_len=4096)
+        kw = {"use_tqdm": False, "chat_template_kwargs": {"enable_thinking": False}}
 
-    @torch.inference_mode()
     def terjemah(kalimat, tgt):
-        prompts = [tok.apply_chat_template(
-            [{"role": "system", "content": "Anda penerjemah profesional. Jawab hanya dengan hasil terjemahan."},
-             {"role": "user", "content": f"Terjemahkan ke bahasa {BAHASA.get(tgt, tgt)}:\n{k}"}],
-            tokenize=False, add_generation_prompt=True) for k in kalimat]
-        enc = tok(prompts, return_tensors="pt", padding=True).to(device)
-        out = model.generate(**enc, max_new_tokens=128, do_sample=False)
-        baru = out[:, enc["input_ids"].shape[1]:]
-        return [t.strip() for t in tok.batch_decode(baru, skip_special_tokens=True)], baru.numel()
+        pesan = [[{"role": "system", "content": "Anda penerjemah profesional. Jawab hanya dengan hasil terjemahan."},
+                  {"role": "user", "content": f"Terjemahkan ke bahasa {BAHASA.get(tgt, tgt)}:\n{k}"}]
+                 for k in kalimat]
+        outs = llm.chat(pesan, SamplingParams(max_tokens=128, temperature=0), **kw)
+        return ([o.outputs[0].text.strip() for o in outs],
+                sum(len(o.outputs[0].token_ids) for o in outs))
     return terjemah
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--duration", type=float, default=60, help="lama uji throughput (detik)")
-    p.add_argument("--mode", choices=["nllb", "llm"], default="nllb")
+    p.add_argument("--mode", choices=["nllb", "llm"], default=None, help="default: nllb (GPU/CPU), llm (NPU)")
     p.add_argument("--model", default=None)
     p.add_argument("--target", nargs="+",
                    default=["eng_Latn", "jav_Latn", "sun_Latn", "min_Latn", "ban_Latn", "bug_Latn"])
@@ -93,14 +96,18 @@ def main():
 
     device, jenis, backend = pilih_device()
     dtype = {"GPU": torch.bfloat16, "NPU": torch.float16, "CPU": torch.float32}[jenis]
-    model_id = args.model or ("facebook/nllb-200-distilled-600M" if args.mode == "nllb"
-                              else "Qwen/Qwen2.5-7B-Instruct")
+    if args.mode is None:
+        args.mode = "llm" if jenis == "NPU" else "nllb"
+    if args.mode == "nllb" and jenis == "NPU":
+        raise SystemExit("NLLB tidak tersedia di NPU RNGD; gunakan --mode llm (default di NPU).")
+    model_id = args.model or (MODEL_NLLB if args.mode == "nllb"
+                              else MODEL_CHAT_NPU if jenis == "NPU" else MODEL_CHAT_GPU)
     kalimat = baca_input(args.input)
     cetak_info("LLM penerjemahan", device, jenis, backend, Model=model_id,
-               Target=", ".join(BAHASA.get(t, t) for t in args.target), Kalimat=len(kalimat))
+               Target=", ".join(BAHASA.get(t, t) for t in args.target), Mode=args.mode, Kalimat=len(kalimat))
 
     t0 = time.time()
-    terjemah = (muat_nllb if args.mode == "nllb" else muat_llm)(model_id, device, dtype)
+    terjemah = (muat_nllb if args.mode == "nllb" else muat_llm)(model_id, device, dtype, jenis)
     sinkron(backend)
     print(f"Model dimuat dalam {time.time() - t0:.1f} s\n", flush=True)
 
@@ -126,7 +133,7 @@ def main():
     sinkron(backend)
     total = time.time() - mulai
     print(f"Throughput: {n_kal / total:.1f} kalimat/s (~{n_tok / total:,.0f} token keluaran/s)"
-          f" selama {total:.0f} s, memori puncak {memori_puncak_gb(backend):.1f} GB")
+          f" selama {total:.0f} s, memori puncak {memori_puncak(backend)}")
 
 
 if __name__ == "__main__":

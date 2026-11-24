@@ -9,22 +9,23 @@ Tiga mode:
   --mode batch      : sekumpulan pertanyaan lintas bidang dijawab sekaligus (default, cocok untuk sbatch)
   --mode multiturn  : contoh percakapan bersambung (riwayat chat dibawa ke giliran berikutnya)
   --mode interaktif : ketik pertanyaan sendiri. Jalankan di sesi interaktif:
-                      srun -p gpu --gres=gpu:h200:1 --time=00:30:00 --pty bash
+                      srun -p gpu_general --gres=gpu:1 --time=00:30:00 --pty bash
+                      srun -p npu_general --gres=npu:1 --time=00:30:00 --pty bash
                       python demo_llm_percakapan.py --mode interaktif
 
-Engine:
-  --engine hf    : Hugging Face transformers (jalan di GPU & NPU)
-  --engine vllm  : vLLM, throughput jauh lebih tinggi (GPU; di NPU Ascend perlu plugin vllm-ascend)
+Engine (--engine auto memilih otomatis):
+  vllm    : vLLM di GPU H200, model default SEA-LION v5 9B (aisingapore)
+  furiosa : furiosa-llm di NPU FuriosaAI RNGD, artefak Llama-3.1-8B-Instruct
+  hf      : Hugging Face transformers (GPU/CPU; lebih lambat)
 
     python demo_llm_percakapan.py --duration 60
-    python demo_llm_percakapan.py --model aisingapore/Gemma-SEA-LION-v3-9B-IT
 """
 import argparse
 import time
 
 import torch
 
-from akselerator import cetak_info, memori_puncak_gb, pilih_device, sinkron
+from akselerator import MODEL_CHAT_GPU, MODEL_CHAT_NPU, cetak_info, memori_puncak, pilih_device, sinkron
 
 SISTEM = ("Anda adalah asisten riset untuk peneliti di Indonesia. Jawab dalam bahasa Indonesia "
           "yang jelas dan ringkas (maksimal 5 kalimat).")
@@ -55,13 +56,13 @@ class ChatHF:
         self.tok = AutoTokenizer.from_pretrained(model_id, padding_side="left")
         if self.tok.pad_token is None:
             self.tok.pad_token = self.tok.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=dtype).to(device).eval()
+        self.model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype).to(device).eval()
         self.device = device
 
     @torch.inference_mode()
     def jawab(self, daftar_pesan, max_tokens=256):
-        prompts = [self.tok.apply_chat_template(m, tokenize=False, add_generation_prompt=True)
-                   for m in daftar_pesan]
+        prompts = [self.tok.apply_chat_template(m, tokenize=False, add_generation_prompt=True,
+                                                enable_thinking=False) for m in daftar_pesan]
         enc = self.tok(prompts, return_tensors="pt", padding=True).to(self.device)
         out = self.model.generate(**enc, max_new_tokens=max_tokens, do_sample=True,
                                   temperature=0.7, top_p=0.9, pad_token_id=self.tok.pad_token_id)
@@ -71,14 +72,24 @@ class ChatHF:
 
 
 class ChatVLLM:
-    def __init__(self, model_id, device, dtype):
-        from vllm import LLM, SamplingParams
-        self.llm = LLM(model=model_id, dtype="bfloat16", gpu_memory_utilization=0.85, max_model_len=4096)
+    """vLLM (GPU) dan furiosa-llm (NPU RNGD) punya API .chat() yang sama."""
+    def __init__(self, model_id, device, dtype, furiosa=False):
+        if furiosa:
+            from furiosa_llm import SamplingParams
+            from akselerator import muat_llm_furiosa
+            self.llm, self.kw = muat_llm_furiosa(model_id), {}
+            self.greedy = True   # sampling acak (temperature/top_p) kadang panic 'InvalidWeight' di furiosa-llm 2026.2
+        else:
+            from vllm import LLM, SamplingParams
+            self.llm = LLM(model=model_id, dtype="bfloat16", gpu_memory_utilization=0.85, max_model_len=4096)
+            self.kw = {"use_tqdm": False, "chat_template_kwargs": {"enable_thinking": False}}
+            self.greedy = False
         self.SP = SamplingParams
 
     def jawab(self, daftar_pesan, max_tokens=256):
-        outs = self.llm.chat(daftar_pesan, self.SP(max_tokens=max_tokens, temperature=0.7, top_p=0.9),
-                             use_tqdm=False)
+        sp = (self.SP(max_tokens=max_tokens, temperature=0) if self.greedy
+              else self.SP(max_tokens=max_tokens, temperature=0.7, top_p=0.9))
+        outs = self.llm.chat(daftar_pesan, sp, **self.kw)
         return [o.outputs[0].text.strip() for o in outs], sum(len(o.outputs[0].token_ids) for o in outs)
 
 
@@ -90,19 +101,27 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--duration", type=float, default=60, help="lama uji throughput (detik)")
     p.add_argument("--mode", choices=["batch", "multiturn", "interaktif"], default="batch")
-    p.add_argument("--engine", choices=["hf", "vllm"], default="hf")
-    p.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
+    p.add_argument("--engine", choices=["auto", "hf", "vllm", "furiosa"], default="auto")
+    p.add_argument("--model", default=None, help="default: SEA-LION v5 9B (GPU), Llama-3.1-8B (NPU)")
     p.add_argument("--max-tokens", type=int, default=256)
     p.add_argument("--output", default="hasil_percakapan.md")
     args = p.parse_args()
 
     device, jenis, backend = pilih_device()
     dtype = {"GPU": torch.bfloat16, "NPU": torch.float16, "CPU": torch.float32}[jenis]
+    if args.engine == "auto":
+        args.engine = {"GPU": "vllm", "NPU": "furiosa", "CPU": "hf"}[jenis]
+    if (args.engine == "furiosa") != (jenis == "NPU"):
+        raise SystemExit(f"Engine '{args.engine}' tidak cocok dengan akselerator {jenis}.")
+    args.model = args.model or (MODEL_CHAT_NPU if jenis == "NPU" else MODEL_CHAT_GPU)
     cetak_info("LLM percakapan", device, jenis, backend, Model=args.model,
                Engine=args.engine, Mode=args.mode)
 
     t0 = time.time()
-    chat = (ChatVLLM if args.engine == "vllm" else ChatHF)(args.model, device, dtype)
+    if args.engine == "hf":
+        chat = ChatHF(args.model, device, dtype)
+    else:
+        chat = ChatVLLM(args.model, device, dtype, furiosa=args.engine == "furiosa")
     print(f"Model dimuat dalam {time.time() - t0:.1f} s\n", flush=True)
 
     if args.mode == "interaktif":
@@ -150,7 +169,7 @@ def main():
     sinkron(backend)
     total = time.time() - mulai
     print(f"Throughput: {total_tok / total:,.0f} token/s (batch {len(PERTANYAAN)}),"
-          f" memori puncak {memori_puncak_gb(backend):.1f} GB")
+          f" memori puncak {memori_puncak(backend)}")
 
 
 if __name__ == "__main__":

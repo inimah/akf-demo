@@ -1,49 +1,52 @@
 #!/bin/bash
 #===============================================================
-# Job Slurm untuk NPU node (Huawei Ascend), dipakai oleh SEMUA demo.
+# Job Slurm untuk NPU node (FuriosaAI RNGD), dipakai oleh demo LLM.
 # Script Python-nya SAMA dengan versi GPU; deteksi device otomatis (akselerator.py).
+# Di RNGD, LLM dijalankan lewat furiosa-llm dengan artefak terkompilasi:
+#   /apps/AI/LLM/models/NPU/furiosa-ai/Llama-3.1-8B-Instruct
 #
 # Pemakaian:
-#   sbatch job_npu.sbatch                                       # default: demo_matmul.py --dtype fp16
-#   sbatch job_npu.sbatch demo_llm_terjemahan.py
-#   sbatch job_npu.sbatch demo_llm_percakapan.py                # engine hf (transformers + torch_npu)
+#   sbatch job_npu.sbatch                                       # default: demo_llm_terjemahan.py
+#   sbatch job_npu.sbatch demo_llm_percakapan.py                # engine furiosa (otomatis)
+#   (demo_analisis_teks.py hanya untuk GPU)
 #
 # Pantau: squeue -u $USER      Hasil: logs/npu-demo-<JOBID>.out
 #===============================================================
 #SBATCH --job-name=npu-demo
-#SBATCH --partition=npu            # GANTI: nama partisi NPU (cek: sinfo)
-#SBATCH --gres=npu:1               # 1 NPU (nama GRES bisa berbeda, cek: sinfo -o "%P %G")
+#SBATCH --partition=npu_general    # partisi NPU RNGD (cek: sinfo)
+#SBATCH --gres=npu:1               # 1 dari 4 NPU RNGD per node
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --time=00:10:00
+#SBATCH --time=00:15:00
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
-##SBATCH --account=NAMA_PROYEK
 
 set -euo pipefail
 
-if [ $# -eq 0 ]; then set -- demo_llm_terjemahan.py --dtype fp16; fi
+if [ $# -eq 0 ]; then set -- demo_llm_terjemahan.py; fi
 SCRIPT=$1; shift
 
 echo "Job ${SLURM_JOB_ID} | $(hostname) | $(date)"
-echo "NPU dialokasikan: ${ASCEND_RT_VISIBLE_DEVICES:-${ASCEND_VISIBLE_DEVICES:-lihat npu-smi}} | script: ${SCRIPT} $*"
+echo "NPU dialokasikan: ${SLURM_JOB_GPUS:-${SLURM_STEP_GPUS:-lihat furiosa-smi}} | script: ${SCRIPT} $*"
 
-# 1) Environment CANN + Python (GANTI path/modul sesuai cluster Anda)
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate demo-npu            # berisi: torch + torch_npu (versi cocok dengan CANN), transformers, dst.
+# 1) Environment Python furiosa-llm (disediakan admin cluster)
+FURIOSA_VENV=${FURIOSA_VENV:-/apps/AI/venv_furiosa/furiosa_llm}
+set +u
+source "${FURIOSA_VENV}/bin/activate"   # berisi: furiosa-llm, furiosa-torch, torch, transformers
+set -u
 
-# 2) Cache model bersama (diunduh di login node)
-export HF_HOME=${HF_HOME:-/scratch/$USER/hf_cache}
+# 2) Lokasi model
+export MODEL_DIR=${MODEL_DIR:-/path/ke/scratch/anda/models}
+export NPU_MODEL_DIR=${NPU_MODEL_DIR:-/apps/AI/LLM/models/NPU/furiosa-ai}
 export HF_HUB_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
-# 3) Info hardware + rekam pemakaian NPU tiap 5 detik di latar belakang
-npu-smi info
-( while true; do date '+%F %T'; npu-smi info -t usages -i 0 2>/dev/null; sleep 5; done ) \
+# 3) Info hardware + rekam suhu/daya NPU tiap 5 detik di latar belakang
+furiosa-smi info
+( while true; do date '+%F %T'; furiosa-smi info 2>/dev/null; sleep 5; done ) \
     > logs/npu-usage-${SLURM_JOB_ID}.log &
 MONITOR_PID=$!
 trap 'kill ${MONITOR_PID} 2>/dev/null || true' EXIT

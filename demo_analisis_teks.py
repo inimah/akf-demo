@@ -17,7 +17,7 @@ import time
 import torch
 import torch.nn.functional as F
 
-from akselerator import cetak_info, pilih_device, sinkron
+from akselerator import MODEL_E5, cetak_info, pilih_device, sinkron
 
 CONTOH = [
     "Harga beras di pasar naik terus sejak bulan lalu.", "Minyak goreng makin mahal, warung kecil kesulitan.",
@@ -46,7 +46,7 @@ def kmeans(x, k, iterasi=50, seed=0):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--duration", type=float, default=60)
-    p.add_argument("--model", default="intfloat/multilingual-e5-small")
+    p.add_argument("--model", default=MODEL_E5)
     p.add_argument("--input", default=None, help="file teks, satu dokumen per baris")
     p.add_argument("--k", type=int, default=4, help="jumlah klaster/tema")
     p.add_argument("--batch", type=int, default=256)
@@ -54,6 +54,9 @@ def main():
 
     from transformers import AutoModel, AutoTokenizer
     device, jenis, backend = pilih_device()
+    if jenis == "NPU":
+        raise SystemExit("Demo embedding belum tersedia untuk NPU FuriosaAI RNGD (perlu artefak terkompilasi). "
+                         "Jalankan di GPU: sbatch job_gpu_h200.sbatch demo_analisis_teks.py")
     teks = CONTOH
     if args.input:
         with open(args.input, encoding="utf-8") as f:

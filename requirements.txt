@@ -1,0 +1,20 @@
+# Minimal requirements for the GPU demos (NVIDIA H200) in a plain Python environment.
+# Versions match the conda env (vllm_env, Python 3.12) the demos were run with on the AKF cluster.
+#
+#   python3.12 -m venv ~/venv-akf-demo
+#   source ~/venv-akf-demo/bin/activate
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# vllm pins a matching PyTorch build (CUDA 13), so torch is installed automatically.
+# The NVIDIA driver on the GPU node must support CUDA 13.
+#
+# NPU (FuriosaAI RNGD): do NOT use this file. furiosa-llm comes from FuriosaAI's own
+# package index and must match the NPU driver/firmware. Use the environment provided
+# by the cluster admin instead:
+#   source /apps/AI/venv_furiosa/furiosa_llm/bin/activate
+
+vllm==0.34.0              # LLM chat on GPU (also installs torch==2.14.0)
+transformers==5.22.2      # NLLB translation, e5 embedding, HF chat engine
+sentencepiece==0.2.3      # NLLB / e5 tokenizers
+huggingface_hub==2.4.0    # `hf download` in unduh_model.sh

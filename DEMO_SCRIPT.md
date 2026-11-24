@@ -1,84 +1,84 @@
-# Demo Script: Running LLM Experiments on GPU (H200) and NPU (RNGD) with Slurm
+# Skrip Demo: Menjalankan Eksperimen LLM di GPU (H200) dan NPU (RNGD) dengan Slurm
 
-Step-by-step commands for a recorded demo. Run everything from the **login node**.
+Perintah langkah demi langkah untuk demo yang direkam. Jalankan semuanya dari **login node**.
 
-| Node | Partition | Accelerator | Software |
+| Node | Partisi | Akselerator | Perangkat lunak |
 |---|---|---|---|
 | GPU | `gpu_general` | NVIDIA H200 (4 per node) | conda `vllm_env` (PyTorch, vLLM) |
 | NPU | `npu_general` | FuriosaAI RNGD (4 per node) | `/apps/AI/venv_furiosa/furiosa_llm` |
 
-Approximate timing: model loading takes ~75 s on GPU (vLLM) and ~40 s on NPU, then each benchmark runs for 60 s.
+Perkiraan waktu: memuat model butuh ~75 detik di GPU (vLLM) dan ~40 detik di NPU, lalu setiap uji throughput berjalan selama 60 detik.
 
 ---
 
-## 0. Preparation (before recording)
+## 0. Persiapan (sebelum merekam)
 
 ```bash
 cd /path/ke/akf-demo
-mkdir -p logs                                          # required: Slurm fails silently without it
-rm -f logs/* hasil_*.tsv hasil_*.md                    # clear previous outputs
+mkdir -p logs                                          # wajib: tanpa folder ini, job Slurm gagal tanpa pesan
+rm -f logs/* hasil_*.tsv hasil_*.md                    # hapus hasil sebelumnya
 clear
 ```
 
-## 1. Show the cluster
+## 1. Tampilkan kondisi cluster
 
 ```bash
 sinfo -o "%P %G %D %t"
 ```
 
-## 2. Submit the jobs (same Python scripts on GPU and NPU)
+## 2. Submit job (script Python yang sama di GPU dan NPU)
 
 ```bash
-sbatch job_gpu_h200.sbatch demo_llm_terjemahan.py                                   # translation, GPU (NLLB-200)
-sbatch job_gpu_h200.sbatch demo_llm_percakapan.py --output hasil_percakapan_gpu.md  # chat, GPU (SEA-LION v5 9B, vLLM)
-sbatch job_npu.sbatch      demo_llm_percakapan.py --output hasil_percakapan_npu.md  # chat, NPU (Llama-3.1-8B, furiosa-llm)
-sbatch job_gpu_h200.sbatch demo_analisis_teks.py                                    # text embedding + clustering, GPU
+sbatch job_gpu_h200.sbatch demo_llm_terjemahan.py                                   # terjemahan, GPU (NLLB-200)
+sbatch job_gpu_h200.sbatch demo_llm_percakapan.py --output hasil_percakapan_gpu.md  # percakapan, GPU (SEA-LION v5 9B, vLLM)
+sbatch job_npu.sbatch      demo_llm_percakapan.py --output hasil_percakapan_npu.md  # percakapan, NPU (Llama-3.1-8B, furiosa-llm)
+sbatch job_gpu_h200.sbatch demo_analisis_teks.py                                    # embedding teks + clustering, GPU
 ```
 
-Each command prints `Submitted batch job <JOBID>`. Note the IDs for the next steps.
+Setiap perintah menampilkan `Submitted batch job <JOBID>`. Catat ID tersebut untuk langkah berikutnya.
 
-> Tip: add `--duration 30` to any line for a shorter recording.
+> Tips: tambahkan `--duration 30` di baris mana pun agar rekaman lebih singkat.
 
-## 3. Show the queue
+## 3. Tampilkan antrean job
 
 ```bash
 squeue -u $USER
 ```
 
-## 4. Follow the jobs live (Ctrl+C stops watching; the job keeps running)
+## 4. Pantau job secara langsung (Ctrl+C berhenti memantau; job tetap berjalan)
 
 ```bash
-# GPU translation (~1.5 min in total)
+# Terjemahan di GPU (~1,5 menit total)
 tail -f logs/gpu-demo-<JOBID>.out
 
-# GPU chat (hide noisy vLLM log lines)
+# Percakapan di GPU (menyembunyikan baris log vLLM yang ramai)
 tail -f logs/gpu-demo-<JOBID>.out | grep -vE "WARNING|INFO|Loading"
 
-# NPU chat
+# Percakapan di NPU
 tail -f logs/npu-demo-<JOBID>.out | grep -v INFO
 ```
 
-> Tip: open two terminals side by side, one following a GPU job and one an NPU job.
+> Tips: buka dua terminal berdampingan, satu memantau job GPU dan satu memantau job NPU.
 
-## 5. Show hardware usage (while jobs run)
-
-```bash
-tail -n 5  logs/gpu-usage-<JOBID>.csv     # GPU utilization, memory, power (every 5 s)
-tail -n 12 logs/npu-usage-<JOBID>.log     # NPU temperature and power (every 5 s)
-```
-
-## 6. Show the results
+## 5. Tampilkan pemakaian hardware (selama job berjalan)
 
 ```bash
-column -t -s $'\t' hasil_terjemahan.tsv | head -20    # translations into 6 languages
-head -30 hasil_percakapan_gpu.md                      # GPU chat answers
-head -30 hasil_percakapan_npu.md                      # NPU chat answers
-grep -h Throughput logs/*-demo-*.out                  # GPU vs NPU speed side by side
+tail -n 5  logs/gpu-usage-<JOBID>.csv     # utilisasi, memori, dan daya GPU (tiap 5 detik)
+tail -n 12 logs/npu-usage-<JOBID>.log     # suhu dan daya NPU (tiap 5 detik)
 ```
 
-## 7. (Optional) Live interactive chat
+## 6. Tampilkan hasil
 
-**On GPU:**
+```bash
+column -t -s $'\t' hasil_terjemahan.tsv | head -20    # terjemahan ke 6 bahasa
+head -30 hasil_percakapan_gpu.md                      # jawaban percakapan dari GPU
+head -30 hasil_percakapan_npu.md                      # jawaban percakapan dari NPU
+grep -h Throughput logs/*-demo-*.out                  # perbandingan kecepatan GPU vs NPU
+```
+
+## 7. (Opsional) Percakapan interaktif langsung
+
+**Di GPU:**
 
 ```bash
 srun -p gpu_general --gres=gpu:1 -c 16 --mem=64G --time=00:30:00 --pty bash
@@ -89,7 +89,7 @@ export HF_HUB_OFFLINE=1
 python demo_llm_percakapan.py --mode interaktif
 ```
 
-**On NPU:**
+**Di NPU:**
 
 ```bash
 srun -p npu_general --gres=npu:1 -c 16 --mem=64G --time=00:30:00 --pty bash
@@ -98,16 +98,16 @@ cd /path/ke/akf-demo
 python demo_llm_percakapan.py --mode interaktif
 ```
 
-Type a question and press Enter. Type `reset` to clear the history, `keluar` to quit, then `exit` to leave the node.
+Ketik pertanyaan lalu tekan Enter. Ketik `reset` untuk menghapus riwayat, `keluar` untuk berhenti, lalu `exit` untuk keluar dari node.
 
 ---
 
-## Notes
+## Catatan
 
-- **Regional-language translation:** show it on the GPU (NLLB). On the NPU, translation uses Llama-3.1-8B and works well only into English:
+- **Terjemahan bahasa daerah:** tampilkan di GPU (NLLB). Di NPU, terjemahan memakai Llama-3.1-8B dan hanya bagus untuk bahasa Inggris:
   `sbatch job_npu.sbatch demo_llm_terjemahan.py --target eng_Latn --output hasil_terjemahan_npu.tsv`
-- **Text analysis** runs on GPU only. On the NPU it exits with a clear message.
-- **Harmless warnings:** `linear_attn.norm.weight ... float32 into bfloat16` lines in GPU logs come from the SEA-LION v5 architecture.
-- **Job status:** `sacct` may be unavailable (accounting database down). Use `squeue` and the log files instead.
-- **Cancel a job:** `scancel <JOBID>`
-- **Errors:** see `logs/<gpu|npu>-demo-<JOBID>.err`
+- **Analisis teks** hanya berjalan di GPU. Di NPU, script berhenti dengan pesan yang jelas.
+- **Peringatan yang bisa diabaikan:** baris `linear_attn.norm.weight ... float32 into bfloat16` di log GPU berasal dari arsitektur SEA-LION v5.
+- **Status job:** `sacct` mungkin tidak tersedia (database accounting sedang mati). Gunakan `squeue` dan berkas log.
+- **Membatalkan job:** `scancel <JOBID>`
+- **Error:** lihat `logs/<gpu|npu>-demo-<JOBID>.err`

@@ -18,7 +18,7 @@ Deteksi akselerator dan lokasi model ada di `akselerator.py`.
 | Demo | Isi | Relevan untuk |
 |---|---|---|
 | `demo_llm_terjemahan.py` | **LLM penerjemahan** Indonesia → Inggris, Jawa, Sunda, Minang, Bali, Bugis, dll. | OR Arkeologi, Bahasa, dan Sastra, OR IPSH, layanan publik multibahasa, Riset Natural Language Processing/AI/Mesin Penerjemah  |
-| `demo_llm_percakapan.py` | **LLM percakapan**: batch tanya-jawab lintas bidang, multi-giliran, interaktif | Riset pengembangan AI untuk Asisten riset/Chatbot |
+| `demo_llm_percakapan.py` | **LLM percakapan**: batch tanya-jawab | Riset pengembangan AI untuk Asisten riset/Chatbot |
 | `demo_analisis_teks.py` | Embedding teks multibahasa + clustering tema (mis. aduan warga) | Riset Natural Language Processing/AI/Data Science |
 
 ## Langkah tutorial
